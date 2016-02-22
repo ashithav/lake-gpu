@@ -1,0 +1,128 @@
+**********Analysis**********
+
+
+CPU vs CPU (5 point vs 9 point stencil) -v1
+-------------------------------------------
+
+For instance, for running the code against 128*128 grid size,
+./lake 128 5 1.0 8
+CPU-evolve took 1.197060 seconds
+CPU-evolve9pt took 1.227931 seconds
+
+Intial heatmap - v1_intial
+Evolve5pt heatmap - v1_evolve5pt
+Evolve9pt heatmap - v1_evolve9pt
+
+The run_cpu function in the lake.cu file can call either the 5point evolve function or the 9 point evolve function.
+The 5point original evolve function took lesser time than the evolve9pt function since the latter needed to use points from all its 8 neighbours, whereas the 5point evolve code needed only the immediate 4 neighbours to compute the value of un.
+
+However, the evolve 9-pt function has a better ring formation around the pebbles in the lake. This is because, in every iteration, every value of un is computed with more neighbours and so the rings are larger and more prominent around the pebbles. This gives a more defined and accurate wave formation as compared to the evolve9pt.
+
+CPU vs GPU -v2
+--------------
+
+The evolve9pt cpu function and gpu kernel produce exactly the same data files and thus, heatmaps. However, the time taken by GPU is much lesser than the time taken to calculate the values in CPU.
+For smaller grid values, the CPU performs better than the GPU. This could be owed to the fact that the initial setup such as blocking cudamemcpy transfer of data to and from the device/host. The overhead to setup and call the kernel is greater than the uc computation itself.
+However, as the grid size increases, the GPU outperforms itself consistently. For the largest grid size of 1024x1024, the CPU takes an entire 600 seconds whereas the GPU take only 3 seconds.
+Also, for larger grid sizes, when the number of threads are increased, the GPU time also decreases, thus improving efficiency.
+
+The following runs show how consistently better the GPU performs as compared to the CPU:
+___________________________________________________________________
+Running ./lake with (16 x 16) grid, until 1.000000, with 8 threads
+CPU took 0.004878 seconds
+GPU computation: 0.649440 msec
+GPU took 1.955670 seconds
+___________________________________________________________________
+Running ./lake with (32 x 32) grid, until 1.000000, with 8 threads
+CPU took 0.028148 seconds
+GPU computation: 1.169792 msec
+GPU took 1.931852 seconds
+____________________________________________________________________
+Running ./lake with (128 x 128) grid, until 1.000000, with 8 threads
+CPU took 1.218259 seconds
+GPU computation: 11.661376 msec
+GPU took 3.032818 seconds
+
+Running ./lake with (128 x 128) grid, until 1.000000, with 16 threads
+CPU took 1.215152 seconds
+GPU computation: 14.094304 msec
+GPU took 1.498059 seconds
+____________________________________________________________________
+Running ./lake with (256 x 256) grid, until 1.000000, with 8 threads
+CPU took 9.913857 seconds
+GPU computation: 44.967903 msec
+GPU took 1.979695 seconds
+_____________________________________________________________________
+./lake 1024 10 1.0 8
+Running ./lake with (1024 x 1024) grid, until 1.000000, with 8 threads
+CPU took 649.814530 seconds
+GPU computation: 2517.626953 msec
+GPU took 4.473588 seconds
+
+ ./lake 1024 10 1.0 16
+Running ./lake with (1024 x 1024) grid, until 1.000000, with 16 threads
+CPU took 662.590778 seconds
+GPU computation: 2017.093384 msec
+GPU took 3.980907 seconds
+______________________________________________________________________
+
+MPI vs CUDA -v3
+----------------
+v3 had many tricky cases that had to be covered as compared to v2.
+The first challenge was to send the correct column/row/corner values to the respective ranks using MPI. Once all nodes received the neighbouring rank border values, the CUDA kernel was called. After the kernel call and for the next iteration, it was not enough to just copy data values between u0,u1 and u for the rank quadrant only. All nodes had to receive the row/column/corner values once again with MPI before the next call in the iteration.
+Another challenge faced was the kernel call itself for each rank. In our kernel code, we identified 5 different cases in order to ensure no cases were missed- Border values that had to be set to zero, column adjacent to a rank, row adjacent to a rank, the cornermost value to be received from the diagonal rank and non-border values. For each of these elements, the N, S, W, E, NE, NW,SE and SW values had to be computed carefully based on their location for a rank.
+
+mpirun -np 4 lake 512 5 1.0 8               
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+CPU took 81.021012 seconds
+MPI took 82.755106 seconds
+MPI took 83.188187 seconds
+MPI took 82.548538 seconds
+MPI took 1.377531 seconds
+
+
+mpirun -np 4 lake 512 10 1.0 8 
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+Running lake with (512 x 512) grid, until 1.000000, with 8 threads
+CPU took 80.708726 seconds
+MPI took 83.249091 seconds
+MPI took 82.010549 seconds
+MPI took 82.641738 seconds
+MPI took 1.367236 seconds
+
+mpirun -np 4 lake 1024 10 1.0 8 
+Running lake with (1024 x 1024) grid, until 1.000000, with 8 threads
+Running lake with (1024 x 1024) grid, until 1.000000, with 8 threads
+Running lake with (1024 x 1024) grid, until 1.000000, with 8 threads
+Running lake with (1024 x 1024) grid, until 1.000000, with 8 threads
+[CPU took 651.462338 seconds
+MPI took 661.053946 seconds
+MPI took 661.423822 seconds
+MPI took 660.266115 seconds
+MPI took 8.112935 seconds
+
+
+
+mpirun -np 4 lake 512 10 1.0 16
+Running lake with (512 x 512) grid, until 1.000000, with 16 threads
+Running lake with (512 x 512) grid, until 1.000000, with 16 threads
+Running lake with (512 x 512) grid, until 1.000000, with 16 threads
+Running lake with (512 x 512) grid, until 1.000000, with 16 threads
+CPU took 81.013554 seconds
+MPI took 83.008811 seconds
+MPI took 82.546690 seconds
+MPI took 83.609526 seconds
+MPI took 1.374075 seconds
+
+
+
+
+
+
+
+
